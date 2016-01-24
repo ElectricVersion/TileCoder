@@ -1,4 +1,8 @@
 /*
+ * Lua Tiled Plugin
+ * Copyright 2011, Thorbjørn Lindeijer <thorbjorn@lindeijer.nl>
+ *
+ * This file is part of Tiled.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -22,6 +26,8 @@
 #include "gidmapper.h"
 #include "map.h"
 #include "mapformat.h"
+#include <fstream>
+#include "plugin.h"
 
 #include <QDir>
 #include <QObject>
@@ -36,21 +42,32 @@ class Tileset;
 
 namespace SparkMap {
 
-class SPARKMAPSHARED_EXPORT SparkMapPlugin : public Tiled::WritableMapFormat
+class SPARKMAPSHARED_EXPORT SparkMapPlugin :  public Tiled::Plugin
 {
     Q_OBJECT
+    Q_INTERFACES(Tiled::Plugin)
     Q_PLUGIN_METADATA(IID "org.mapeditor.MapFormat" FILE "plugin.json")
 
 public:
-    SparkMapPlugin();
+    void initialize() override;
+};
 
-    //Tiled::Map *read(const QString &fileName) override;
+class SPARKMAPSHARED_EXPORT SparkMapFormat : public Tiled::MapFormat
+{
+    Q_OBJECT
+    Q_INTERFACES(Tiled::MapFormat)
+public:
+    SparkMapFormat(QObject *parent);
+    Tiled::Map *read(const QString &fileName) override;
     bool write(const Tiled::Map *map, const QString &fileName) override;
     QString nameFilter() const override;
     QString errorString() const override;
 
+    bool supportsFile(const QString &fileName) const override;
 private:
     QString mError;
+    uint8_t read_uint8(std::istream & file);
+    uint16_t read_uint16(std::istream & file);
 };
 
 } // namespace SparkMap
