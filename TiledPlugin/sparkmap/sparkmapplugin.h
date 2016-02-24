@@ -68,8 +68,16 @@ private:
     QString mError;
     uint8_t read_uint8(std::istream & file);
     uint16_t read_uint16(std::istream & file);
+    void uint_to_char(char * buffer, uint8_t input);
+    void uint_to_char(char * buffer, uint16_t input);
 };
 
 } // namespace SparkMap
+
+struct SparkTile
+{
+    uint id;
+    uint idProperty;
+};
 
 #endif // SPARKMAPPLUGIN_H

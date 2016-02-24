@@ -55,7 +55,7 @@ uint8_t SparkMapFormat::read_uint8(istream & file)
 {
     char tempchar[1];
     file.read(tempchar, 1);
-    uint8_t output = *(reinterpret_cast<uint8_t *>(tempchar));
+    uint8_t output = *(static_cast<uint8_t *>(static_cast<void*>(tempchar)));
     return output;
 }
 
@@ -63,14 +63,33 @@ uint16_t SparkMapFormat::read_uint16(istream & file)
 {
     char tempchars[2];
     file.read(tempchars, 2);
-    void * outputPointer = tempchars;
-    uint16_t output = *(reinterpret_cast<uint16_t *>(outputPointer));
+    uint16_t output = *(static_cast<uint16_t *>(static_cast<void*>(tempchars)));;
     return output;
 }
 
 Map * SparkMapFormat::read(const QString &fileName)
 {
-    fstream file(fileName.toStdString().c_str(), fstream::in|fstream::binary);
+    /*string rawFileName = fileName.toStdString().substr(0, fileName.toStdString().find_last_of("."));
+    string tilesetFilename = rawFileName + ".tileset";
+    fstream tilesetFile(tilesetFilename.c_str(), fstream::in);
+    while (tilesetFile.good())
+    {
+        char buffer[256];
+        tilesetFile.getline(buffer, 256);
+        if (tilesetFile.good())
+        {
+            string bufstr = string(buffer);
+            if (bufstr.compare(0,8, "TILESET ")==0)
+            {
+                SharedTileset sharedtileset = Tileset::create("New Tileset", 32, 32, 0);
+                int first_quote = bufstr.find("\"");
+                int last_quote = bufstr.find("\"", first_quote+1);
+                string name
+            }
+        }
+    }*/
+
+    /*fstream file(fileName.toStdString().c_str(), fstream::in|fstream::binary);
     file.seekg(0);
     char fileHeader[8];
     file.read(fileHeader, 8);
@@ -86,110 +105,203 @@ Map * SparkMapFormat::read(const QString &fileName)
         file.read(hHeader, 2);
         h = read_uint8(file);
         output = new Map(Map::Orthogonal, w, h, 32, 32);
+
+        SharedTileset sharedtileset = Tileset::create("testing tileset", 32, 32, 0);
+        sharedtileset->loadFromImage("C:/Users/Nick/Desktop/Apples/tileset.png");
+        output->addTileset(sharedtileset);
         // start parsing layers
-        while ( (file.rdstate() & std::ifstream::eofbit ) != 0 )
+        while ( file.good() )
         {
             //search for a layer
             char layerHeader[4];
             file.read(layerHeader, 4);
-            if (memcmp(layerHeader, "LYR", 4))
+            if (memcmp(layerHeader, "LYR", 4)==0)
             {
                 TileLayer * layer = new TileLayer(QString("Loaded Layer"), 0, 0, w, h);
-                for (unsigned int l=0; ((l<(w*h)) && (file.rdstate() & std::ifstream::eofbit )) != 0; l++)
+                bool keepreading=true;
+                int position = file.tellg();
+                unsigned int iw=0;
+                unsigned int ih=0;
+                while (keepreading==true && file.good())
                 {
-                    read_uint16(file);
+                    char tempchars[4];
+                    file.read(tempchars, 4);
+                    if (memcmp(tempchars, "LYR", 4)==0)
+                    {
+                        keepreading=false;
+                        position=file.tellg();
+                    }
+                    else
+                    {
+                        file.seekg(position);
+                    }
+                    if (file.eof())
+                    {
+                        keepreading=false;
+                    }
+                    if (keepreading)
+                    {
+                        uint16_t tileId = read_uint16(file);
+                        layer->setCell(iw, ih, Cell(sharedtileset->tileAt(tileId)));
+                        position = file.tellg();
+                        iw++;
+                        if (iw >= w)
+                        {
+                            iw = 0;
+                            ih++;
+                        }
+                        qDebug() << iw;
+                        qDebug() << ih;
+                        qDebug() << "Done";
+                    }
                 }
                 output->addLayer(layer);
             }
         }
     }
     file.close();
+    */
+    Map * output = new Map(Map::Orthogonal, 1, 1, 32, 32);
     return output;
+}
+
+void SparkMapFormat::uint_to_char(char * buffer, uint8_t input)
+{
+    input = boost::endian::native_to_big(input);
+    void * input_pointer = &input;
+    char * output = static_cast<char *>(input_pointer);
+    buffer[0] = output[0];
+}
+
+void SparkMapFormat::uint_to_char(char * buffer, uint16_t input)
+{
+    input = boost::endian::native_to_big(input);
+    void * input_pointer = &input;
+    char * output = static_cast<char *>(input_pointer);
+    buffer[0] = output[0];
+    buffer[1] = output[1];
 }
 
 bool SparkMapFormat::write(const Map *map, const QString &fileName)
 {
-    fstream file(fileName.toStdString().c_str(), fstream::out|fstream::binary);
-
     // write the header
-    file.write("MAP_V02", 8);
+    const char fileVersion_code = 0x00;
+    const char mapWidth_code = 0x01;
+    const char mapHeight_code = 0x02;
+    const char beginMap_code = 0x03;
+    const char beginLayer_code = 0x04;
+    const char tile_code = 0x05;
+    const char endLayer_code = 0x06;
+    const char endMap_code = 0x07;
+
+    const char fileVersion = 3;
+
+    fstream mapfile(fileName.toStdString().c_str(), fstream::out|fstream::binary);
+    // write the header and version number
+    mapfile.write(&fileVersion_code, 1);
+    mapfile.write(&fileVersion, 1);
+
+    // get the map's dimensions
     uint8_t width = map->width();
     uint8_t height = map->height();
     width=boost::endian::native_to_big(width);
     height=boost::endian::native_to_big(height);
 
-    file.write("W", 2);
-    file.write(reinterpret_cast<const char *>(&width), sizeof(uint8_t));
-    file.write("H", 2);
-    file.write(reinterpret_cast<const char *>(&height), sizeof(uint8_t));
+    // convert them to chars so we can write them
+    char widthChar[1];
+    char heightChar[1];
+    uint_to_char(widthChar, width);
+    uint_to_char(heightChar, height);
+
+    // now write the dimensions to the file
+    mapfile.write(&mapWidth_code, 1);
+    mapfile.write(widthChar, 1);
+    mapfile.write(&mapHeight_code, 1);
+    mapfile.write(heightChar, 1);
+
+    // indicate that the map is starting
+    mapfile.write(&beginMap_code, 1);
+
     // Traverse all tile layers
     foreach (const Layer *layer, map->layers())
     {
         if (layer->layerType() != Layer::TileLayerType)
-            continue;
-
-        file.write("LYR", 4);
-        const TileLayer *tileLayer = static_cast<const TileLayer*>(layer);
-
-        bool usingCustomIds=true;
-        const QString idproperty = "tileID";
-
-
-        // make sure everything has the custom id property
-        for (int y = 0; y < tileLayer->height(); ++y)
         {
-            for (int x = 0; x < tileLayer->width(); ++x)
+            continue;
+        }
+        else
+        {
+            mapfile.write(&beginLayer_code, 1);
+            const TileLayer *tileLayer = static_cast<const TileLayer*>(layer);
+
+            bool usingCustomIds=true;
+            const QString idproperty = "tileID";
+
+
+            // make sure everything has the custom id property
+            for (int y = 0; y < tileLayer->height(); ++y)
             {
-                const Cell &cell = tileLayer->cellAt(x, y);
-                if (cell.isEmpty()==false)
+                for (int x = 0; x < tileLayer->width(); ++x)
                 {
-                    const Tile *tile = cell.tile;
-                    if (tile->hasProperty(idproperty))
+                    const Cell &cell = tileLayer->cellAt(x, y);
+                    if (cell.isEmpty()==false)
                     {
-                        if (!((tile->property(idproperty).toUInt())>0)) // if the id property cant be converted to an uint or eq zero
+                        const Tile *tile = cell.tile;
+                        if (tile->hasProperty(idproperty))
+                        {
+                            if (!((tile->property(idproperty).toUInt())>0)) // if the id property cant be converted to an uint or eq zero
+                            {
+                                usingCustomIds=false;
+                            }
+                        }
+                        else
                         {
                             usingCustomIds=false;
                         }
                     }
-                    else
-                    {
-                        usingCustomIds=false;
-                    }
                 }
             }
-        }
 
-        // now write it
-        for (int y = 0; y < tileLayer->height(); ++y)
-        {
-            for (int x = 0; x < tileLayer->width(); ++x)
+            // now write it
+            for (int y = 0; y < tileLayer->height(); ++y)
             {
-                const Cell &cell = tileLayer->cellAt(x, y);
-                uint16_t id=0;
-                if (cell.isEmpty()==false)
+                for (int x = 0; x < tileLayer->width(); ++x)
                 {
-                    const Tile *tile = cell.tile;
-                    if (usingCustomIds)
+                    const Cell &cell = tileLayer->cellAt(x, y);
+                    uint16_t id=0;
+                    if (cell.isEmpty()==false)
                     {
-                        id = (tile->property(idproperty).toUInt());
+                        const Tile *tile = cell.tile;
+                        if (usingCustomIds)
+                        {
+                            id = (tile->property(idproperty).toUInt());
+                        }
+                        else
+                        {
+                            id = (tile->id())+1;
+                        }
                     }
-                    else
-                    {
-                        id = (tile->id())+1;
-                    }
+                    id = boost::endian::native_to_big(id);
+                    char id_char[2];
+                    uint_to_char(id_char, id);
+                    mapfile.write(&tile_code, 1);
+                    mapfile.write(id_char, 2);
                 }
-                id = boost::endian::native_to_big(id);
-                file.write(reinterpret_cast<const char *>(&id), sizeof(uint16_t));
             }
+            mapfile.write(&endLayer_code, 1);
         }
     }
-    file.close();
+
+    // indicate that the map is finished
+    mapfile.write(&endMap_code, 1);
+
+    mapfile.close();
     return true;
 }
 
 QString SparkMapFormat::nameFilter() const
 {
-    return tr("SparkMap files (*.map)");
+    return tr("Apples Map files (*.map)");
 }
 
 QString SparkMapFormat::errorString() const
